@@ -18,7 +18,7 @@
   3. In your app "myapp" create a file called tasks.py  
   4. define a function called 'photo_upload' and add arbitrary code  
   5. In your app.views import QueuedTask and create it somewhere  
-      `QueuedTask.object.create(name='picture_upload', app='myapp', user_id=request.user.id, data={file_id: 1})  `
+      `QueuedTask.object.create(name='photo_upload', app='myapp', user_id=request.user.id, data={file_id: 1})  `
   6. add or edit your workers in workers.py to add workers, or tasks that workers should execute  
 
 ##Example:
