@@ -22,6 +22,12 @@
   6. add or edit your workers in workers.py to add workers, or tasks that workers should execute  
 
 ##Example:
+#### Install dependencies
+```
+pip install jsonfield
+yum install rabbitmq-server
+/etc/init.d/rabbitmq-server start
+```
 ####workers.py -- edit workers (leave everything else)
 ```
 WORKERS = {  
