@@ -1,95 +1,129 @@
-import pika
-from multiprocessing import Process
-import workers
-import time
+from carrot.models import Worker, Task
+from django.utils import timezone
 from django.db import connection as dbconnection
+from multiprocessing import Process, active_children
 
-class WorkerManager(object):
+import pika
 
-    def start(self):
-        self.rabbit.create_exchange(self.exchange)
-        self.rabbit.create_queue(self.queue)
-        self.rabbit.bind_queue(self.exchange, self.queue, self.routing_key)
-        self.rabbit.start_consuming(self.queue, self.__start_worker)
-
-    def __start_worker(self, ch, method, properties, body):
-        body = eval(body)
-        app = body['app']
-        task_name = body['task_name']
-        task_id = body['task_id']
-        worker = self.__get_worker(app, task_name)
-        if self.__worker_has_available_thread(worker):
-            print 'Starting worker: %s for task: %s' % (worker, task_name)
-            # For sanity, close dbconnection
-            dbconnection.close()
-            job = Process(target=self.workers[worker]['callback'], args=(task_id,))
-            job.start()
-            self.worker_running_threads[worker].append(job)
-        else:
-            print 'No threads available for worker: %s' % (worker,)
-            Process(target=self.__requeue_task, args=(str(body),)).start()
-        return
-
-    def __get_worker(self, app, task_name):
-        worker = None
-        for worker_name, worker_settings in self.workers.iteritems():
-            if worker_settings['app'] == app:
-                if task_name in worker_settings['tasks']:
-                    worker = worker_name
-                    break
-        return worker
-
-    def __worker_has_available_thread(self, worker):
-        jobs = self.worker_running_threads[worker]
-        for job in jobs:
-            if not job.is_alive():
-                self.worker_running_threads[worker].remove(job)
-        if len(self.worker_running_threads[worker]) < self.worker_max_threads[worker]:
-            return True
-        else:
-            return False
-
-    def __requeue_task(self, body):
-        # Don't requeue right away it will just be immediately consumed
-        time.sleep(10)
-        self.rabbit.send_message(self.exchange, self.routing_key, body)
-        return
+import threading
+import time
+import importlib
+import traceback
+import os
+import signal
+import sys
 
 
-    def __init__(self, worker_dict=workers.WORKERS, exchange='carrot', queue='worker-manager', routing_key='worker-manager'):
-        self.rabbit = RabbitHelper()
-        self.exchange = exchange
-        self.queue = queue
-        self.routing_key = routing_key
-        self.workers = worker_dict
-        self.worker_running_threads = {}
-        self.worker_max_threads = {}
-        self.jobs = {}
-        for key, value in self.workers.iteritems():
-            self.worker_running_threads[key] = []
-            self.worker_max_threads[key] = value['threads']
+class WorkerService(object):
+	def __init__(self, worker):
+		assert isinstance(worker, Worker)
+		self.worker = worker
+		self.exchange = worker.exchange
+		self.queue = worker.queue
+		self.routing_key = worker.routing_key
+
+	def start(self):
+		# Register a Signal Terminate Handler so this can die gracefully when running as a daemon
+		signal.signal(signal.SIGTERM, self.__sigterm_handler)
+
+		self.rabbit = RabbitHelper()
+		self.rabbit.create_exchange(self.exchange)
+		self.rabbit.create_queue(self.queue)
+		self.rabbit.bind_queue(self.exchange, self.queue, self.routing_key)
+		try:
+			self.rabbit.start_consuming(self.queue, self.__message_callback)
+		except KeyboardInterrupt:
+			self.stop()
+
+	def stop(self):
+		self.rabbit.close()
+		active_children() # joins Processes
+		dbconnection.close() # prevents internactive shell from Mysql has gone away error
+		sys.exit(0)
+		return
+
+	def __sigterm_handler(self, signal, frame):
+		print('Worker(%s) Caught SIGTERM. Shutting down' % self.worker.name)
+		return self.stop()
+
+	def __message_callback(self, ch, method, properties, body):
+		# Max concurrency for a worker is defined by worker.concurrency
+		while len(active_children()) >= self.worker.concurrency:
+			print('Worker(%s) at max concurrency: %s' % (self.worker.name, self.worker.concurrency))
+			time.sleep(1)
+
+		# process task
+		task_id = int(body)
+		print('Starting work for task: %s ' % task_id)
+		Process(target=self.process_task, args=(task_id,)).start()
+
+		# Acknowledge the message 
+		ch.basic_ack(delivery_tag = method.delivery_tag)
+
+	def process_task(self, task_id):
+		try:
+			# Close db connection after fork else bad things happen
+			dbconnection.close()
+
+			# Get task 
+			print('Process %s: started for Task: %s' % (os.getpid(), task_id))
+			task = Task.objects.get(id=task_id)
+			task.status = 'processing'
+			task.date_processed = timezone.now()
+			task.save()
+
+			# Run
+			function_to_call = task.get_callable()
+			retval = function_to_call(*task.args, **task.kwargs)
+
+			task.status = retval
+
+		except KeyboardInterrupt:
+			print("Caught Keyboard Interrupt: Quiting gracefully...")
+			task.status = "KeyboardInterrupt"
+		except Task.DoesNotExist:
+			print("Task does not exist for id: %s, nothing to do")
+			task = None
+		except Exception as e:
+			print('Error caught: %s' % str(e))
+			print(traceback.format_exc())
+			task.status = 'Error: %s' % str(e)
+		finally:
+			print('Process %s finished for Task: %s ' % (os.getpid(), task_id))
+			if task:
+				task.date_completed = timezone.now()
+				task.completed = True
+				task.save()
+
 
 
 class RabbitHelper(object):
-    def send_message(self, exchange, routing_key, message):
-        self.channel.basic_publish(exchange=exchange, routing_key=routing_key, body=message)
+	def send_message(self, exchange, routing_key, message):
+		self.channel.basic_publish(exchange=exchange, routing_key=routing_key, body=message)
 
-    def start_consuming(self, queue_name, callback, no_ack=True):
-        self.channel.basic_consume(callback, queue=queue_name, no_ack=no_ack)
-        self.channel.start_consuming()
+	def start_consuming(self, queue_name, callback, no_ack=False):
+		self.channel.basic_consume(callback, queue=queue_name, no_ack=no_ack)
+		self.channel.start_consuming()
 
-    def create_exchange(self, exchange, type='direct', durable=True):
-        self.channel.exchange_declare(exchange=exchange, type=type, durable=durable)
+	def create_exchange(self, exchange, type='direct', durable=True):
+		self.channel.exchange_declare(exchange=exchange, type=type, durable=durable)
 
-    def create_queue(self, queue_name, durable=True):
-        self.channel.queue_declare(queue=queue_name, durable=durable)
+	def create_queue(self, queue_name, durable=True):
+		self.channel.queue_declare(queue=queue_name, durable=durable)
 
-    def bind_queue(self, exchange, queue_name, routing_key):
-        self.channel.queue_bind(exchange=exchange, queue=queue_name, routing_key=routing_key)
+	def bind_queue(self, exchange, queue_name, routing_key):
+		self.channel.queue_bind(exchange=exchange, queue=queue_name, routing_key=routing_key)
 
-    def __init__(self, host='localhost'):
-        self.connection = pika.BlockingConnection(pika.ConnectionParameters(host=host))
-        self.channel = self.connection.channel()
+	def close(self):
+		self.connection.close()
 
-    def __del__(self):
-        self.connection.close()
+	def __init__(self, host='localhost'):
+		self.connection = pika.BlockingConnection(pika.ConnectionParameters(host=host))
+		self.channel = self.connection.channel()
+
+
+def test(seconds):
+	print('this is a carrot task test')
+	print('sleeping for %s seconds' % seconds)
+	time.sleep(seconds)
+	print('finished sleeping')
