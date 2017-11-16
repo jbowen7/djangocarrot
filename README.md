@@ -13,34 +13,34 @@
   ```
 
   2. Add carrot to installed apps
-  # settings.py
+  --settings.py
   `INSTALLED_APPS = ['carrot']`
 
   3. Migrate models 
-  ```
+  ```python
   manage.py makemigrations carrot
   manage.py migrate 
   ```
   
 ## Basic Usage:
-```
+```python
 from carrot.models import Task  
 
 Task.objects.create(kallable="myapp.mymodule.mykallable")
 ```
 
 Task arguments:
-kallable (required): location to callable, e.g. animals.Dog.bark
-args (optional): list of positional arguments to pass to the callable 
-kwargs (optional): map of key/value pairs to pass to the callable
-worker (optional): request a specific worker to execute task
+* kallable (required): location to callable, e.g. animals.Dog.bark
+* args (optional): list of positional arguments to pass to the callable 
+* kwargs (optional): map of key/value pairs to pass to the callable
+* worker (optional): request a specific worker to execute task
 
 
 ## Workers
 A default worker is already available to use for tasks, however if it is necessary to create new workers to handle specific
 tasks. For example let's say you needed to have one worker which only processed one task at a time so as not to overwhelm 
 some system resource.
-```
+```python
 from carrot.models import Worker, Task
 
 worker = Worker(name='fileprocesser')
@@ -57,7 +57,7 @@ Task.objects.create(kallable='example.processFile', args=['/tmp/huge3.wav'], kwa
 
 ## Consume tasks
 The tasks need to be consumed. This can easily be accomplished with the WorkerService
-```
+```python
 from carrot.utils import WorkerService
 WorkerService().start()
 ```
