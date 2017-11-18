@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 setup(
   name = 'djangocarrot',
   packages = find_packages(),
-  version = '1.1',
+  version = '1.1.1',
   description = 'Carrot -- A simple task Queue for Django.',
   author = 'John Bowen',
   author_email = 'jbowen7@gmail.com',
