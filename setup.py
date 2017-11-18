@@ -9,4 +9,5 @@ setup(
   url = 'https://github.com/jbowen7/djangocarrot',
   keywords = ['django', 'task', 'queue'],
   classifiers = [],
+  install_requires = ['pika',],
 )
