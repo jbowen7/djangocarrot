@@ -6,11 +6,14 @@ from carrot.fields import ListField, DictField
 import importlib
 
 
-"""
-Function is used to ensure we always have a default worker
-"""
+DEFAULT_WORKER_NAME = 'default'
+
+
 def get_default_worker_id():
-	worker, created = Worker.objects.get_or_create(name="default", defaults={"name":"default"})
+	"""
+	Function is used to ensure we always have a default worker
+	"""
+	worker, created = Worker.objects.get_or_create(name=DEFAULT_WORKER_NAME, defaults={"name": DEFAULT_WORKER_NAME})
 	return worker.id
 
 
@@ -18,7 +21,7 @@ class Task(models.Model):
 	kallable = models.CharField(max_length=255)
 	args = ListField(null=True, blank=True)
 	kwargs = DictField(null=True, blank=True)
-	worker = models.ForeignKey('Worker', default=get_default_worker_id)
+	worker = models.ForeignKey('Worker', default=get_default_worker_id, on_delete=models.PROTECT)
 	status = models.CharField(max_length=255, null=True, blank=True)
 	completed = models.BooleanField(default=False)
 	date_created = models.DateTimeField(auto_now_add=True)
