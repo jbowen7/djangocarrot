@@ -1,0 +1,14 @@
+env
+run
+src/*
+.idea
+.tox
+.env
+.coverage
+nohup.out
+
+*.egg-info
+*.swp
+*.pyc
+
+!src/carrot
