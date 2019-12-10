@@ -7,6 +7,7 @@ import importlib
 
 
 DEFAULT_WORKER_NAME = 'default'
+DEFAULT_EXCHANGE = 'carrot'
 
 
 def get_default_worker_id():
@@ -28,22 +29,20 @@ class Task(models.Model):
 	date_processed = models.DateTimeField(null=True, blank=True)
 	date_completed = models.DateTimeField(null=True, blank=True)
 
-	def get_module(self):
-		split_path = self.kallable.split('.')
-		module_name, callable_name = ".".join(split_path[:-1]), split_path[-1]
-		return importlib.import_module(module_name)
-
 	def get_callable(self):
 		split_path = self.kallable.split('.')
 		module_name, callable_name = ".".join(split_path[:-1]), split_path[-1]
-		return getattr(self.get_module(), callable_name)
+		module = importlib.import_module(module_name)
+		return getattr(module, callable_name)
 
 	@property
 	def exchange(self):
-		return "carrot"
+		return DEFAULT_EXCHANGE
+
 	@property
 	def queue(self):
 		return "%s-%s" % (self.exchange, self.worker.name)
+
 	@property
 	def routing_key(self):
 		return "%s-%s" % (self.exchange, self.worker.name)
@@ -79,11 +78,12 @@ class Worker(models.Model):
 
 	@property
 	def exchange(self):
-		return "carrot"
+		return DEFAULT_EXCHANGE
+
 	@property
 	def queue(self):
 		return "%s-%s" % (self.exchange, self.name)
+
 	@property
 	def routing_key(self):
 		return "%s-%s" % (self.exchange, self.name)
-
