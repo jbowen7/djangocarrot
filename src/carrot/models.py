@@ -29,11 +29,12 @@ class Task(models.Model):
 	date_processed = models.DateTimeField(null=True, blank=True)
 	date_completed = models.DateTimeField(null=True, blank=True)
 
-	def get_callable(self):
+	def execute(self):
 		split_path = self.kallable.split('.')
 		module_name, callable_name = ".".join(split_path[:-1]), split_path[-1]
 		module = importlib.import_module(module_name)
-		return getattr(module, callable_name)
+		func = getattr(module, callable_name)
+		return func(*self.args, **self.kwargs)
 
 	@property
 	def exchange(self):

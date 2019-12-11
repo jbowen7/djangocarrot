@@ -5,9 +5,7 @@ from multiprocessing import Process, active_children
 
 import pika
 
-import threading
 import time
-import importlib
 import traceback
 import os
 import signal
@@ -37,8 +35,8 @@ class WorkerService(object):
 
 	def stop(self):
 		self.rabbit.close()
-		active_children() # joins Processes
-		dbconnection.close() # prevents internactive shell from Mysql has gone away error
+		active_children()  # joins Processes
+		dbconnection.close()  # prevents internactive shell from Mysql has gone away error
 		sys.exit(0)
 		return
 
@@ -57,15 +55,15 @@ class WorkerService(object):
 		print('Starting work for task: %s ' % task_id)
 		Process(target=self.process_task, args=(task_id,)).start()
 
-		# Acknowledge the message 
-		ch.basic_ack(delivery_tag = method.delivery_tag)
+		# Acknowledge the message
+		ch.basic_ack(delivery_tag=method.delivery_tag)
 
 	def process_task(self, task_id):
 		try:
 			# Close db connection after fork else bad things happen
 			dbconnection.close()
 
-			# Get task 
+			# Get task
 			print('Process %s: started for Task: %s' % (os.getpid(), task_id))
 			task = Task.objects.get(id=task_id)
 			task.status = 'processing'
@@ -73,9 +71,7 @@ class WorkerService(object):
 			task.save()
 
 			# Run
-			function_to_call = task.get_callable()
-			retval = function_to_call(*task.args, **task.kwargs)
-
+			retval = task.execute()
 			task.status = retval
 
 		except KeyboardInterrupt:
@@ -94,7 +90,6 @@ class WorkerService(object):
 				task.date_completed = timezone.now()
 				task.completed = True
 				task.save()
-
 
 
 class RabbitHelper(object):
