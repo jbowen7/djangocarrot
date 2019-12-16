@@ -1,2 +1,1 @@
-default_app_config = 'carrot.settings.CarrotConfig'
-
+default_app_config = 'carrot.app.CarrotConfig'
