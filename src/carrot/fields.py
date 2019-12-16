@@ -9,7 +9,7 @@ class ListField(models.TextField):
 	ListField is a textfield that serializes/unserializes Lists
 	It saves lists as JSON strings.
 	"""
-	def from_db_value(self, value, expression, connection, context):
+	def from_db_value(self, value, expression, connection):
 		if not value:
 			return list()
 		return json.loads(value)
@@ -29,7 +29,7 @@ class DictField(models.TextField):
 	DictField is a textfield that serializes/unserializes Dict
 	It saves lists as JSON strings.
 	"""
-	def from_db_value(self, value, expression, connection, context):
+	def from_db_value(self, value, expression, connection):
 		if not value:
 			return dict()
 		return json.loads(value)
