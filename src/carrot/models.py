@@ -1,52 +1,86 @@
-from django.db import models
-from django.core.validators import ValidationError
-
-from carrot.fields import ListField, DictField
-
+import logging
 import importlib
 
+from django.db import models
+from django.core.validators import ValidationError
+from django.utils import timezone
 
-DEFAULT_WORKER_NAME = 'default'
-DEFAULT_EXCHANGE = 'carrot'
+from carrot.fields import ListField, DictField
+from carrot.connections import publisher
+from carrot.settings import carrot_settings
 
 
-def get_default_worker_id():
-	"""
-	Function is used to ensure we always have a default worker
-	"""
-	worker, created = Worker.objects.get_or_create(name=DEFAULT_WORKER_NAME, defaults={"name": DEFAULT_WORKER_NAME})
-	return worker.id
+LOGGER = logging.getLogger(__name__)
 
 
 class Task(models.Model):
-	kallable = models.CharField(max_length=255)
+	class Status(models.Choices):
+		PENDING = 1
+		RUNNING = 2
+		COMPLETED = 3
+		FAILED = 4
+
+	class ExitCode(models.Choices):
+		SUCCESS = 0
+		UNKNOWN_ERROR = 1
+
+	kallable = models.CharField(max_length=512)
 	args = ListField(null=True, blank=True)
 	kwargs = DictField(null=True, blank=True)
-	worker = models.ForeignKey('Worker', default=get_default_worker_id, on_delete=models.PROTECT)
-	status = models.CharField(max_length=255, null=True, blank=True)
-	completed = models.BooleanField(default=False)
-	date_created = models.DateTimeField(auto_now_add=True)
-	date_processed = models.DateTimeField(null=True, blank=True)
-	date_completed = models.DateTimeField(null=True, blank=True)
+
+	queue = models.CharField(blank=True, null=True, max_length=255)
+	created_by = models.CharField(max_length=512, blank=True, null=True)
+
+	status = models.SmallIntegerField(choices=Status.choices, default=Status.PENDING, db_index=True)
+	message = models.CharField(max_length=2048, blank=True, null=True)
+	exit_code = models.SmallIntegerField(choices=ExitCode.choices, blank=True, null=True)
+
+	created_on = models.DateTimeField(auto_now_add=True)
+	started_on = models.DateTimeField(null=True, blank=True)
+	completed_on = models.DateTimeField(null=True, blank=True)
 
 	def execute(self):
-		split_path = self.kallable.split('.')
-		module_name, callable_name = ".".join(split_path[:-1]), split_path[-1]
-		module = importlib.import_module(module_name)
-		func = getattr(module, callable_name)
-		return func(*self.args, **self.kwargs)
+		"""
+		Execute the function that this task represents
+		"""
+		self.started_on = timezone.now()
+		LOGGER.debug(f'Executing task ({self.id}) => ({self.kallable})')
 
-	@property
-	def exchange(self):
-		return DEFAULT_EXCHANGE
+		try:
+			split_path = self.kallable.split('.')
+			module_name, callable_name = ".".join(split_path[:-1]), split_path[-1]
+			module = importlib.import_module(module_name)
+			func = getattr(module, callable_name)
+			func(*self.args, **self.kwargs)
+			self.exit_code = self.ExitCode.SUCCESS
 
-	@property
-	def queue(self):
-		return "%s-%s" % (self.exchange, self.worker.name)
+		except Exception as e:
+			LOGGER.exception('Unknown exception processing task ({self.id})')
+			self.exit_code = self.ExitCode.UNKNOWN_ERROR
+			self.message = str(e)
 
-	@property
-	def routing_key(self):
-		return "%s-%s" % (self.exchange, self.worker.name)
+		finally:
+			self.status = self.Status.COMPLETED if self.exit_code == self.ExitCode.SUCCESS else self.Status.FAILED
+			self.completed_on = timezone.now()
+
+			# Transient tasks are valid. Only save fields if an id exists, i.e. it's stored in the db
+			if self.id:
+				self.save(update_fields={'exit_code', 'completed_on', 'message', 'started_on'})
+
+		return self.exit_code == self.ExitCode.SUCCESS
+
+	def publish(self):
+		"""
+		Publishes message to configured RabbitMQ connection if self.queue is a valid Queue member
+		"""
+		queue = carrot_settings['queue_map'].get(self.queue, None)
+		assert queue is not None, f"({self.queue}) is not a valid carrot queue"
+
+		publisher.publish(
+			message=str(self.id),
+			exchange=carrot_settings['exchange'],
+			routing_key=queue.name,
+		)
 
 	def clean(self, *args, **kwargs):
 		try:
@@ -56,7 +90,7 @@ class Task(models.Model):
 			kallable = getattr(module, callable_name)
 			assert callable(kallable)
 		except ValueError:
-			raise ValidationError("Callable not valid. Requires full dot-notation path, e.g. app.utils.my_function" % self.kallable)
+			raise ValidationError(f"Callable not valid. Requires full dot-notation path, e.g. app.utils.my_function")
 		except ImportError:
 			raise ValidationError("Module (%s) cannot be imported" % module_name)
 		except AttributeError:
@@ -64,27 +98,11 @@ class Task(models.Model):
 		except AssertionError:
 			raise ValidationError("Callable (%s) is not callable" % (callable_name,))
 
+		if self.queue and self.queue not in carrot_settings['queue_map']:
+			raise ValidationError(f"({self.queue}) is not a valid carrot queue")
+
 		return super().clean(*args, **kwargs)
 
 	def save(self, *args, **kwargs):
 		self.clean()
 		return super().save(*args, **kwargs)
-
-
-class Worker(models.Model):
-	name = models.CharField(max_length=255)
-	description = models.CharField(max_length=255, blank=True, null=True)
-	concurrency = models.IntegerField(default=4)
-	enabled = models.BooleanField(default=True)
-
-	@property
-	def exchange(self):
-		return DEFAULT_EXCHANGE
-
-	@property
-	def queue(self):
-		return "%s-%s" % (self.exchange, self.name)
-
-	@property
-	def routing_key(self):
-		return "%s-%s" % (self.exchange, self.name)
