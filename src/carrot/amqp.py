@@ -102,7 +102,7 @@ class RabbitConnection:
 			self._connection = None
 			self._channel = None
 
-	def setup_queue_exchange(self, exchange=None, queue=None, routing_key=None, exchange_type=DEFAULT_EXCHANGE_TYPE):
+	def setup_queue_exchange(self, exchange=None, queue=None, routing_key=None, durable_queue=False, durable_exchange=False, exchange_type=DEFAULT_EXCHANGE_TYPE):
 		"""
 		Initialize the exchange and queue
 		"""
@@ -116,8 +116,8 @@ class RabbitConnection:
 		assert exchange, "You must provide a name for the exchange"
 		assert queue, "You must provide a name for the queue"
 
-		self._channel.exchange_declare(exchange=exchange, exchange_type=exchange_type)
-		self._channel.queue_declare(queue)
+		self._channel.exchange_declare(exchange=exchange, exchange_type=exchange_type, durable=durable_exchange)
+		self._channel.queue_declare(queue, durable=durable_queue)
 		self._channel.queue_bind(exchange=exchange, queue=queue, routing_key=routing_key)
 
 
