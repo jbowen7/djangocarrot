@@ -9,5 +9,18 @@ class CarrotConfig(AppConfig):
 	def ready(self):
 		from carrot.models import Task  # noqa
 		from carrot.signals import publish_task  # noqa
+		from carrot.connections import publisher  # noqa
+		from carrot.settings import carrot_settings  # noqa
 
+		# Register signals
 		post_save.connect(publish_task, Task)
+
+		# Setup RabbitMQ resources
+		for queue in carrot_settings['queues']:
+			publisher.setup_queue_exchange(
+				exchange=carrot_settings['exchange'],
+				queue=queue.name,
+				routing_key=queue.name,
+				durable_exchange=carrot_settings['durable_exchange'],
+				durable_queue=carrot_settings['durable_queues'],
+			)
