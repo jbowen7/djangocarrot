@@ -1,5 +1,4 @@
 from django.apps import AppConfig
-from django.db.models.signals import post_save
 
 
 class CarrotConfig(AppConfig):
@@ -7,13 +6,8 @@ class CarrotConfig(AppConfig):
 	verbose_name = "Carrots are better than celery"
 
 	def ready(self):
-		from carrot.models import Task  # noqa
-		from carrot.signals import publish_task  # noqa
 		from carrot.connections import publisher  # noqa
 		from carrot.settings import carrot_settings  # noqa
-
-		# Register signals
-		post_save.connect(publish_task, Task)
 
 		# Setup RabbitMQ resources
 		for queue in carrot_settings['queues']:
