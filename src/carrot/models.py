@@ -11,6 +11,7 @@ from carrot.utils import import_callable
 
 
 LOGGER = logging.getLogger(__name__)
+EMPTY_STRING = ''
 
 
 class Task(models.Model):
@@ -26,19 +27,20 @@ class Task(models.Model):
 		FAILED = 4
 
 	class ExitCode(models.IntegerChoices):
+		NOTSET = -1
 		SUCCESS = 0
 		UNKNOWN_ERROR = 1
 
 	kallable = models.CharField(max_length=512)
-	args = ListField(null=True, blank=True)
-	kwargs = DictField(null=True, blank=True)
+	args = ListField(blank=True, default=EMPTY_STRING)
+	kwargs = DictField(blank=True, default=EMPTY_STRING)
 
-	queue = models.CharField(blank=True, null=True, max_length=255)
+	queue = models.CharField(max_length=255, blank=True, default=EMPTY_STRING)
 
 	status = models.SmallIntegerField(choices=Status.choices, default=Status.PENDING, db_index=True)
-	message = models.CharField(max_length=2048, blank=True, null=True)
-	exit_code = models.SmallIntegerField(choices=ExitCode.choices, blank=True, null=True)
-	created_by = models.CharField(max_length=512, blank=True, null=True)
+	message = models.CharField(max_length=2048, default=EMPTY_STRING)
+	exit_code = models.SmallIntegerField(choices=ExitCode.choices, default=ExitCode.NOTSET)
+	created_by = models.CharField(max_length=512, blank=True, default=EMPTY_STRING)
 
 	created_on = models.DateTimeField(auto_now_add=True)
 	started_on = models.DateTimeField(null=True, blank=True)
@@ -80,7 +82,7 @@ class Task(models.Model):
 		"""
 		Publishes message to configured RabbitMQ connection if self.queue is a valid Queue member
 		"""
-		assert self.can_publish
+		assert self.can_publish, f"queue ({self.queue}) is not a valid queue to publish to"
 		publisher.publish(
 			message=str(self.id),
 			exchange=carrot_settings['exchange'],
@@ -108,5 +110,5 @@ class Task(models.Model):
 		is_new = self._state.adding
 		self.validate()
 		super().save(*args, **kwargs)
-		if is_new and self.queue:
+		if is_new and self.can_publish:
 			self.publish()
