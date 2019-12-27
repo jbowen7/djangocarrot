@@ -64,6 +64,7 @@ class Task(models.Model):
 			func = import_callable(self.kallable)
 			func(*self.args, **self.kwargs)
 			self.exit_code = self.ExitCode.SUCCESS
+			self.message = ''
 
 		except Exception as e:
 			LOGGER.exception('Error processing task ({self.id})')
