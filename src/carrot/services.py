@@ -35,7 +35,7 @@ class Worker:
 		try:
 			task = Task.objects.get(id=message)
 		except Task.DoesNotExist:
-			LOGGER.execption(f"task ({message}) does not exist, unable to execute task")
+			LOGGER.exception(f"task ({message}) does not exist, unable to execute task")
 		else:
 			task.execute()
 
