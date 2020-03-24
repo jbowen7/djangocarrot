@@ -9,9 +9,6 @@ publisher = RabbitPublisher(
 	exchange=carrot_settings['exchange'],
 )
 
-# The publisher is a long lived connection w/ connection error handling
-publisher.connect()
-
 
 def close_all():
 	publisher.close()

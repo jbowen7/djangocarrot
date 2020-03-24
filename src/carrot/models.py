@@ -6,7 +6,7 @@ from django.utils import timezone
 
 from carrot.fields import ListField, DictField
 from carrot.connections import publisher
-from carrot.settings import carrot_settings
+from carrot.settings import carrot_settings, DEFAULT_QUEUE_NAME
 from carrot.utils import import_callable
 
 
@@ -20,14 +20,13 @@ class Task(models.Model):
 	Task instances can publish themselves to a queue for asynchronous consumption, or can be executed
 	directly with self.execute()
 	"""
-	class Status(models.IntegerChoices):
-		PENDING = 1
-		RUNNING = 2
-		COMPLETED = 3
-		FAILED = 4
+	class Status(models.Choices):
+		PENDING = 'pending'
+		RUNNING = 'running'
+		COMPLETED = 'completed'
+		FAILED = 'failed'
 
 	class ExitCode(models.IntegerChoices):
-		NOTSET = -1
 		SUCCESS = 0
 		UNKNOWN_ERROR = 1
 
@@ -35,11 +34,11 @@ class Task(models.Model):
 	args = ListField(blank=True, default=EMPTY_STRING)
 	kwargs = DictField(blank=True, default=EMPTY_STRING)
 
-	queue = models.CharField(max_length=255, blank=True, default=EMPTY_STRING)
+	queue = models.CharField(max_length=255, blank=True, default=DEFAULT_QUEUE_NAME)
 
-	status = models.SmallIntegerField(choices=Status.choices, default=Status.PENDING, db_index=True)
+	status = models.CharField(max_length=255, choices=Status.choices, default=Status.PENDING)
 	message = models.CharField(max_length=2048, default=EMPTY_STRING)
-	exit_code = models.SmallIntegerField(choices=ExitCode.choices, default=ExitCode.NOTSET)
+	exit_code = models.SmallIntegerField(choices=ExitCode.choices, blank=True, null=True)
 	created_by = models.CharField(max_length=512, blank=True, default=EMPTY_STRING)
 
 	created_on = models.DateTimeField(auto_now_add=True)
@@ -48,12 +47,18 @@ class Task(models.Model):
 
 	@property
 	def can_publish(self):
-		return self.queue in carrot_settings['queue_map']
+		return self.queue in carrot_settings['queues']
 
 	def execute(self):
 		"""
 		Execute the function that this task represents
 		"""
+		# List/Dict fields work as expect when initialized from db
+		if not isinstance(self.args, list):
+			self.refresh_from_db()
+		elif not isinstance(self.kwargs, dict):
+			self.refresh_from_db()
+
 		self.started_on = timezone.now()
 		self.status = self.Status.RUNNING
 		if self.id:
@@ -87,7 +92,7 @@ class Task(models.Model):
 		publisher.publish(
 			message=str(self.id),
 			exchange=carrot_settings['exchange'],
-			routing_key=carrot_settings['queue_map'][self.queue].name,
+			routing_key=carrot_settings['queues'][self.queue]['queue_name'],
 		)
 
 	def validate(self):
@@ -101,7 +106,7 @@ class Task(models.Model):
 			raise ValidationError(f"Callable ({self.kallable}) is not callable")
 
 		# If instance has `queue` set, require that it exists
-		if self.queue and self.queue not in carrot_settings['queue_map']:
+		if self.queue and self.queue not in carrot_settings['queues']:
 			raise ValidationError(f"({self.queue}) is not a valid carrot queue")
 
 	def save(self, *args, **kwargs):

@@ -13,23 +13,31 @@ from carrot.settings import carrot_settings
 LOGGER = logging.getLogger(__name__)
 
 
-class Worker:
+class Worker(RabbitConsumer):
 	"""
-	Worker is a queue consumer which will serially process tasks one at a time
+	Worker is a serial queued task consumer
 	"""
 	PREFETCH_COUNT = 1
 
-	def __init__(self, queue):
-		assert queue in carrot_settings['queue_map'], f"{queue} is not a valid queue"
+	def __init__(self, queue, *args, **kwargs):
+		assert queue in carrot_settings['queues'], f"{queue} is not a valid queue"
 
-		self.queue = carrot_settings['queue_map'][queue].name
-		self.exchange = carrot_settings['exchange']
-		self.consumer = RabbitConsumer(queue=self.queue, exchange=self.exchange, callback=self.on_message, prefetch_count=self.PREFETCH_COUNT)
+		kwargs['queue'] = carrot_settings['queues'][queue]['queue_name']
+		kwargs['exchange'] = carrot_settings['exchange']
+		kwargs['host'] = carrot_settings['host']
+		kwargs['port'] = carrot_settings['port']
+		kwargs['user'] = carrot_settings['user']
+		kwargs['password'] = carrot_settings['password']
+
+		kwargs['prefetch_count'] = self.PREFETCH_COUNT
+		kwargs['callback'] = self.on_message
+
+		super().__init__(*args, **kwargs)
 
 	def run(self):
 		# Ensure new db fds are opened since workers are commonly forks
 		connections.close_all()
-		self.consumer.run()
+		return super().run()
 
 	def on_message(self, message):
 		try:
