@@ -1,7 +1,4 @@
 import logging
-#from multiprocessing import Process, active_children, Pool
-import multiprocessing
-import signal
 
 from django.db import connections
 
@@ -42,34 +39,8 @@ class Worker(RabbitConsumer):
 	def on_message(self, message):
 		try:
 			task = Task.objects.get(id=message)
-		except Task.DoesNotExist:
-			LOGGER.exception(f"task ({message}) does not exist, unable to execute task")
-		else:
 			task.execute()
-
-
-class WorkerService:
-	"""
-	WorkerService is used to manage multipe Worker instances for Task concurrency
-	"""
-	def __init__(self, workers):
-		assert all([isinstance(x, Worker) for x in workers]), "invalid arg (workers) must be an iterable of Worker instances"
-		self.workers = workers
-
-	def run(self):
-		signal.signal(signal.SIGTERM, self._sigterm)
-		signal.signal(signal.SIGINT, self._sigterm)
-
-		processes = []
-		for worker in self.workers:
-			p = multiprocessing.Process(target=worker.run, daemon=True)
-			p.start()
-			processes.append(p)
-
-		for p in processes:
-			p.join()
-
-	def _sigterm(self, signum, frame):
-		# Nothing needs to be done. The forked worker processes will handle their own signal
-		# and eventually the processes will be joined (hopefully)
-		LOGGER.info(f"WorkerService received shutdown signal ({signum}). Waiting for children to join")
+		except Task.DoesNotExist:
+			LOGGER.error(f"task ({message}) does not exist, unable to execute task")
+		except: # noqa
+			LOGGER.exception("Carrot Worker caught an exception, the task failed, but the worker does not die")

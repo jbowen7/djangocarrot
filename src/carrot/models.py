@@ -53,36 +53,35 @@ class Task(models.Model):
 		"""
 		Execute the function that this task represents
 		"""
-		# List/Dict fields work as expect when initialized from db
-		if not isinstance(self.args, list):
-			self.refresh_from_db()
-		elif not isinstance(self.kwargs, dict):
-			self.refresh_from_db()
+		# List/Dictfields may not be lists/dicts if the model instance
+		# wasn't initialized from the db
+		if not self.args:
+			self.args = []
+		if not self.kwargs:
+			self.kwargs = {}
 
 		self.started_on = timezone.now()
 		self.status = self.Status.RUNNING
 		if self.id:
-			self.save(update_fields={'status', 'started_on'})
+			self.save(validate=False, update_fields={'status', 'started_on'})
 
-		LOGGER.info(f'Executing task ({self.id}) => ({self.kallable})')
+		LOGGER.info(f"Executing task ({self.id}) => ({self.kallable})")
 		try:
-			func = import_callable(self.kallable)
-			func(*self.args, **self.kwargs)
 			self.exit_code = self.ExitCode.SUCCESS
 			self.message = ''
+			func = import_callable(self.kallable)
+			return func(*self.args, **self.kwargs)
 
 		except Exception as e:
-			LOGGER.exception('Error processing task ({self.id})')
 			self.exit_code = self.ExitCode.UNKNOWN_ERROR
 			self.message = repr(e)
+			raise
 
 		finally:
 			self.status = self.Status.COMPLETED if self.exit_code == self.ExitCode.SUCCESS else self.Status.FAILED
 			self.completed_on = timezone.now()
 			if self.id:
-				self.save(update_fields={'status', 'exit_code', 'completed_on', 'message'})
-
-		return self.exit_code == self.ExitCode.SUCCESS
+				self.save(validate=False, update_fields={'status', 'exit_code', 'completed_on', 'message'})
 
 	def publish(self):
 		"""
@@ -102,6 +101,7 @@ class Task(models.Model):
 		"""
 		# Make sure self.kallable is importable and is a callable object
 		func = import_callable(self.kallable)
+
 		if not callable(func):
 			raise ValidationError(f"Callable ({self.kallable}) is not callable")
 
@@ -113,8 +113,10 @@ class Task(models.Model):
 		"""
 		Enforces validation and publishes to queue during creation if queue is set
 		"""
+		if kwargs.pop('validate', True):
+			self.validate()
+
 		is_new = self._state.adding
-		self.validate()
 		super().save(*args, **kwargs)
 		if is_new and self.can_publish:
 			self.publish()
