@@ -4,7 +4,7 @@ import os
 from setuptools import setup, find_packages
 
 BASE_DIR = os.path.dirname(__file__)
-VERSION = '2.2.0'
+VERSION = '2.2.1'
 
 setup(
   name = 'djangocarrot',
