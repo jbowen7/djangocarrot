@@ -20,7 +20,7 @@ class Task(models.Model):
 	Task instances can publish themselves to a queue for asynchronous consumption, or can be executed
 	directly with self.execute()
 	"""
-	class Status(models.Choices):
+	class Status(models.TextChoices):
 		PENDING = 'pending'
 		RUNNING = 'running'
 		COMPLETED = 'completed'
