@@ -1,6 +1,7 @@
 import logging
 
 from django.db import connections
+from django.db.utils import OperationalError
 
 from carrot.models import Task
 from carrot.amqp import RabbitConsumer
@@ -39,8 +40,14 @@ class Worker(RabbitConsumer):
 	def on_message(self, message):
 		try:
 			task = Task.objects.get(id=message)
-			task.execute()
 		except Task.DoesNotExist:
 			LOGGER.error(f"task ({message}) does not exist, unable to execute task")
+		except OperationalError:
+			# client timeout might cause db connections to close. Attempt reconnect
+			connections.close_all()
+			task = Task.objects.get(id=message)
+
+		try:
+			task.execute()
 		except: # noqa
 			LOGGER.exception("Carrot Worker caught an exception, the task failed, but the worker does not die")
