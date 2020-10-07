@@ -1,6 +1,11 @@
 env
 run
+build
+dist
+
 src/*
+!src/carrot
+
 .idea
 .tox
 .env
@@ -11,4 +16,3 @@ nohup.out
 *.swp
 *.pyc
 
-!src/carrot
