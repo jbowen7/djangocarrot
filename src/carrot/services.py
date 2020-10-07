@@ -2,6 +2,7 @@ import logging
 
 from django.db import connections
 from django.db.utils import OperationalError
+from django.db.models import Q
 
 from carrot.models import Task
 from carrot.amqp import RabbitConsumer
@@ -55,7 +56,7 @@ class Worker(RabbitConsumer):
 
 	def _get_task(self, task_id):
 		try:
-			task = Task.objects.get(id=task_id)
+			task = Task.objects.get(id=task_id, status=Task.status.PENDING)
 		except Task.DoesNotExist:
 			task = None
 		return task

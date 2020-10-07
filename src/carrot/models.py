@@ -47,7 +47,7 @@ class Task(models.Model):
 
 	@property
 	def can_publish(self):
-		return self.queue in carrot_settings['queues']
+		return self.queue in carrot_settings['queues'] and self.status == self.Status.PENDING
 
 	def execute(self):
 		"""
@@ -87,7 +87,7 @@ class Task(models.Model):
 		"""
 		Publishes message to configured RabbitMQ connection if self.queue is a valid Queue member
 		"""
-		assert self.can_publish, f"queue ({self.queue}) is not a valid queue to publish to"
+		assert self.can_publish
 		publisher.publish(
 			message=str(self.id),
 			exchange=carrot_settings['exchange'],
