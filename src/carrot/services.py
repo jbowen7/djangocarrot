@@ -47,7 +47,11 @@ class Worker(RabbitConsumer):
 			task = self._get_task(message)
 
 		if task is None:
-			LOGGER.error(f"task ({message}) does not exist, unable to execute task")
+			LOGGER.error(f"task ({message}) does not exist, was db_table flushed?")
+
+		elif task.status != task.Status.PENDING:
+			LOGGER.info(f"task ({message}) no longer pending execution, discarding.")
+
 		else:
 			try:
 				task.execute()
@@ -56,7 +60,7 @@ class Worker(RabbitConsumer):
 
 	def _get_task(self, task_id):
 		try:
-			task = Task.objects.get(id=task_id, status=Task.status.PENDING)
+			task = Task.objects.get(id=task_id)
 		except Task.DoesNotExist:
 			task = None
 		return task
