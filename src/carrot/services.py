@@ -39,15 +39,23 @@ class Worker(RabbitConsumer):
 
 	def on_message(self, message):
 		try:
-			task = Task.objects.get(id=message)
-		except Task.DoesNotExist:
-			LOGGER.error(f"task ({message}) does not exist, unable to execute task")
+			task = self._get_task(message)
 		except OperationalError:
 			# client timeout might cause db connections to close. Attempt reconnect
 			connections.close_all()
-			task = Task.objects.get(id=message)
+			task = self._get_task(message)
 
+		if task is None:
+			LOGGER.error(f"task ({message}) does not exist, unable to execute task")
+		else:
+			try:
+				task.execute()
+			except: # noqa
+				LOGGER.exception("Carrot Worker caught an exception, the task failed, but the worker does not die")
+
+	def _get_task(self, task_id):
 		try:
-			task.execute()
-		except: # noqa
-			LOGGER.exception("Carrot Worker caught an exception, the task failed, but the worker does not die")
+			task = Task.objects.get(id=task_id)
+		except Task.DoesNotExist:
+			task = None
+		return task
