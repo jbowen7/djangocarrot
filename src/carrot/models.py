@@ -117,6 +117,11 @@ class Task(models.Model):
 			self.validate()
 
 		is_new = self._state.adding
+
+		message_field_max_length = 2048
+		if isinstance(self.message, str) and len(self.message) > message_field_max_length:
+			self.message = self.message[:message_field_max_length]
+
 		super().save(*args, **kwargs)
 		if is_new and self.can_publish:
 			self.publish()
