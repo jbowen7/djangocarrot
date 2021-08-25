@@ -12,6 +12,7 @@ from carrot.utils import import_callable
 
 LOGGER = logging.getLogger(__name__)
 EMPTY_STRING = ''
+MESSAGE_FIELD_MAX_LEN = 2048
 
 
 class Task(models.Model):
@@ -37,7 +38,7 @@ class Task(models.Model):
 	queue = models.CharField(max_length=255, blank=True, default=DEFAULT_QUEUE_NAME)
 
 	status = models.CharField(max_length=255, choices=Status.choices, default=Status.PENDING)
-	message = models.CharField(max_length=2048, default=EMPTY_STRING)
+	message = models.CharField(max_length=MESSAGE_FIELD_MAX_LEN, default=EMPTY_STRING)
 	exit_code = models.SmallIntegerField(choices=ExitCode.choices, blank=True, null=True)
 	created_by = models.CharField(max_length=512, blank=True, default=EMPTY_STRING)
 
@@ -116,11 +117,12 @@ class Task(models.Model):
 		if kwargs.pop('validate', True):
 			self.validate()
 
-		is_new = self._state.adding
+		# Truncate the message if it's too long
+		_message = str(self.message)
+		if len(_message) > MESSAGE_FIELD_MAX_LEN:
+			self.message = _message[:MESSAGE_FIELD_MAX_LEN]
 
-		message_field_max_length = 2048
-		if isinstance(self.message, str) and len(self.message) > message_field_max_length:
-			self.message = self.message[:message_field_max_length]
+		is_new = self._state.adding
 
 		super().save(*args, **kwargs)
 		if is_new and self.can_publish:
