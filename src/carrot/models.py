@@ -1,4 +1,5 @@
 import logging
+import os
 
 from django.db import models
 from django.core.validators import ValidationError
@@ -41,6 +42,7 @@ class Task(models.Model):
 	message = models.CharField(max_length=MESSAGE_FIELD_MAX_LEN, default=EMPTY_STRING)
 	exit_code = models.SmallIntegerField(choices=ExitCode.choices, blank=True, null=True)
 	created_by = models.CharField(max_length=512, blank=True, default=EMPTY_STRING)
+	pid = models.IntegerField(blank=True, null=True)
 
 	created_on = models.DateTimeField(auto_now_add=True)
 	started_on = models.DateTimeField(null=True, blank=True)
@@ -63,10 +65,11 @@ class Task(models.Model):
 
 		self.started_on = timezone.now()
 		self.status = self.Status.RUNNING
+		self.pid = os.getpid()
 		if self.id:
-			self.save(validate=False, update_fields={'status', 'started_on'})
+			self.save(validate=False, update_fields={'status', 'started_on', 'pid'})
 
-		LOGGER.info(f"Executing task ({self.id}) => ({self.kallable})")
+		LOGGER.info(f"Executing task (pid: {self.pid}) ({self.id}) => ({self.kallable})")
 		try:
 			self.exit_code = self.ExitCode.SUCCESS
 			self.message = ''
@@ -81,8 +84,9 @@ class Task(models.Model):
 		finally:
 			self.status = self.Status.COMPLETED if self.exit_code == self.ExitCode.SUCCESS else self.Status.FAILED
 			self.completed_on = timezone.now()
+			self.pid = None
 			if self.id:
-				self.save(validate=False, update_fields={'status', 'exit_code', 'completed_on', 'message'})
+				self.save(validate=False, update_fields={'status', 'exit_code', 'completed_on', 'message', 'pid'})
 
 	def publish(self):
 		"""
